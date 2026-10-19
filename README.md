@@ -89,7 +89,7 @@ The banner lists the agents it found. Type `/agents` to see their status, then t
 davinci --setup-terminal
 ```
 
-On Windows, this adds a **DaVinci's Shell** profile to Windows Terminal. The profile has a warm "DaVinci" colour scheme, a bar cursor, and the [JetBrains Mono](https://www.jetbrains.com/lp/mono/) font if it's installed (otherwise Cascadia Code). Restart Windows Terminal and pick the profile from the ▾ menu. Your existing `settings.json` isn't changed, because the profile is installed as a separate fragment.
+On Windows, this adds a **DaVinci's Shell** profile to Windows Terminal. The profile has a warm "DaVinci" colour scheme, a bar cursor, a small 6pt font, a see-through blurred (acrylic) background like VS Code's Vibrancy extension, and the [JetBrains Mono](https://www.jetbrains.com/lp/mono/) font if it's installed (otherwise Cascadia Code). Restart Windows Terminal and pick the profile from the ▾ menu. Your existing `settings.json` isn't changed, because the profile is installed as a separate fragment.
 
 To use the font in VS Code's terminal, add this to your settings:
 
@@ -99,7 +99,7 @@ To use the font in VS Code's terminal, add this to your settings:
 
 ## The look
 
-- **Matrix rain** in Claude's clay falls across the full width of the top of the screen when DaVinci starts, a few rows tall. It stops as soon as you start typing.
+- **Hyperspace**: stars streak out from the centre across the full width of the top of the screen when DaVinci starts, a few rows tall. It stops as soon as you start typing.
 - **The thinking line** shows a shimmering verb while the agent works, such as *Ruminating*, *Percolating*, or one of Leonardo's: *Mixing pigments*, *Mirror-writing*, *Designing flying machines*. Dots fill in after it (`.`, `..`, `...`) as a loading animation, and it shows the elapsed time.
 - **Each agent has its own colour.** Claude is clay, Codex is green, Gemini is blue, and linked agents are gold. The colour appears in the prompt, the reply bullets and the tool lines.
 - Colours are 24-bit where the terminal supports them, with a 256-colour fallback. `NO_COLOR` turns colour off.
@@ -249,7 +249,7 @@ src/agents/claude.js  Claude Code adapter (streaming JSON, sessions, permissions
 src/agents/cli.js     generic adapter for any command-line agent
 src/agents/index.js   builds agent instances from the config
 src/config.js         ~/.davinci/config.json, defaults, history
-src/ui.js             colours, matrix-rain banner, thinking line, markdown rendering
+src/ui.js             colours, hyperspace banner, thinking line, markdown rendering
 src/live.js           the live region while an agent works: thinking line, queue, open prompt
 src/terminal.js       Windows Terminal profile + colour scheme (--setup-terminal)
 src/util.js           PATH lookup, process spawning, arg parsing, templates

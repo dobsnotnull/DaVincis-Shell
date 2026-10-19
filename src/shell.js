@@ -6,7 +6,7 @@ const { spawn } = require('child_process');
 const config = require('./config');
 const { createAgents } = require('./agents');
 const { commands, getCommand } = require('./commands');
-const { c, hex, renderMarkdown, banner, agentColor, Rain, useColor } = require('./ui');
+const { c, hex, renderMarkdown, banner, agentColor, Hyperspace, useColor } = require('./ui');
 const { Live } = require('./live');
 const { IS_WIN, which, desktopDir, tildify, expandTemplate, parseInput } = require('./util');
 const { version } = require('../package.json');
@@ -296,13 +296,13 @@ class Shell {
     resolve(value);
   }
 
-  // Rain falls across the top of the screen until the user starts typing.
-  animateBanner(rain, rows, linesBelow) {
-    if (!rain || !process.stdin.isTTY) return;
+  // Hyperspace streaks across the top of the screen until the user starts typing.
+  animateBanner(warp, rows, linesBelow) {
+    if (!warp || !process.stdin.isTTY) return;
     const timer = setInterval(() => {
-      rain.step();
+      warp.step();
       let s = '\x1b7\x1b[?25l';
-      rain.rows().forEach((row, i) => (s += `\x1b8\x1b[${rows + linesBelow - i}A\r${row}`));
+      warp.rows().forEach((row, i) => (s += `\x1b8\x1b[${rows + linesBelow - i}A\r${row}`));
       process.stdout.write(s + '\x1b8\x1b[?25h');
     }, 80);
     const stop = () => {
@@ -317,8 +317,8 @@ class Shell {
   start() {
     const linked = [...this.agents].filter(([, a]) => a.isLinked()).map(([n]) => n);
     const info = { agent: this.agentName, mode: this.mode, cwd: tildify(this.cwd), linked };
-    const rain = useColor && process.stdout.isTTY ? new Rain(Math.max(1, (process.stdout.columns || 80) - 1)) : null;
-    const text = banner(version, info, rain);
+    const warp = useColor && process.stdout.isTTY ? new Hyperspace(Math.max(1, (process.stdout.columns || 80) - 1)) : null;
+    const text = banner(version, info, warp);
     console.log(text);
     let below = 2;
     if (!linked.length) {
@@ -407,7 +407,7 @@ class Shell {
 
     this.rl.setPrompt(this.promptText());
     this.rl.prompt();
-    this.animateBanner(rain, text.split('\n').length, below);
+    this.animateBanner(warp, text.split('\n').length, below);
   }
 
   exit() {

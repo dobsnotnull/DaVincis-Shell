@@ -62,11 +62,13 @@ function setupWindowsTerminal() {
         startingDirectory: os.homedir(),
         icon: '🎨',
         colorScheme: SCHEME.name,
-        font: { face: font, size: 9, weight: 'normal' }, // 75% of the usual 12pt
+        font: { face: font, size: 6, weight: 'normal' }, // 50% of the usual 12pt
         cursorShape: 'bar',
         padding: '14, 12',
-        opacity: 96,
+        // see-through, blurred background, like VS Code's Vibrancy extension
+        opacity: 60,
         useAcrylic: true,
+        unfocusedAppearance: { opacity: 60 },
         tabColor: '#D4A84B',
       },
     ],

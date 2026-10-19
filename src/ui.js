@@ -87,46 +87,69 @@ function renderMarkdown(text) {
     .join('\n');
 }
 
-// Matrix-style rain for the top of the start-up screen, in Claude's clay.
-const RAIN_GLYPHS = [...'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ0123456789:=*+<>'];
-const RAIN_ROWS = 4;
-const RAIN_SHADES = 10;
-const glyph = () => RAIN_GLYPHS[Math.floor(Math.random() * RAIN_GLYPHS.length)];
+// Hyperspace for the top of the start-up screen: stars streak out from the centre.
+const WARP_ROWS = 6;
+const WARP_SHADES = 10;
 
-class Rain {
-  constructor(width, rows = RAIN_ROWS, color = PALETTE.clay) {
+class Hyperspace {
+  constructor(width, rows = WARP_ROWS, color = '#A3C0DE') {
     this.w = width;
     this.h = rows;
+    this.cx = (width - 1) / 2;
+    this.cy = (rows - 1) / 2;
     const base = hexToRgb(color);
     const dark = [26, 23, 20]; // the DaVinci terminal background
-    this.head = `\x1b[${fgCode(mix(base, [255, 245, 235], 0.75))}m`;
-    this.shades = Array.from({ length: RAIN_SHADES }, (_, i) => `\x1b[${fgCode(mix(dark, base, (i + 1) / RAIN_SHADES))}m`);
-    this.ch = Array.from({ length: width * rows }, glyph);
+    this.head = `\x1b[${fgCode(mix(base, [255, 255, 255], 0.8))}m`;
+    this.shades = Array.from({ length: WARP_SHADES }, (_, i) => `\x1b[${fgCode(mix(dark, base, (i + 1) / WARP_SHADES))}m`);
+    this.ch = Array(width * rows).fill(' ');
     this.lum = new Float32Array(width * rows);
-    this.drops = Array.from({ length: width }, () => this._drop(3));
-    for (let i = 0; i < 40; i++) this.step(); // start mid-shower, not on an empty sky
+    this.stars = Array.from({ length: Math.max(12, Math.round((width * rows) / 14)) }, () => this._star(true));
+    for (let i = 0; i < 30; i++) this.step(); // start mid-jump, not on an empty sky
   }
 
-  _drop(spread) {
-    return { y: -1 - Math.random() * this.h * spread, speed: 0.15 + Math.random() * 0.35, decay: 0.72 + Math.random() * 0.18 };
+  // d runs from the centre (0) to the edge (1); stars speed up as they fly out.
+  _star(anywhere) {
+    return { a: Math.random() * Math.PI * 2, d: anywhere ? Math.random() : 0.02 + Math.random() * 0.18, v: 0.008 + Math.random() * 0.02 };
+  }
+
+  _pos({ a, d }) {
+    return [this.cx + Math.cos(a) * d * (this.cx + 1), this.cy + Math.sin(a) * d * (this.cy + 1)];
+  }
+
+  // A line character that follows the streak (cells are about twice as tall as wide).
+  _streak(dx, dy) {
+    if (Math.hypot(dx, dy * 2) < 1) return '·';
+    const deg = Math.abs((Math.atan2(dy * 2, dx) * 180) / Math.PI);
+    if (deg < 25 || deg > 155) return '─';
+    if (deg > 65 && deg < 115) return '│';
+    return dx * dy > 0 ? '╲' : '╱';
   }
 
   step() {
-    const { w, h, lum, ch, drops } = this;
-    for (let i = 0; i < lum.length; i++) {
-      lum[i] *= drops[i % w].decay;
-      if (lum[i] > 0.15 && Math.random() < 0.03) ch[i] = glyph();
-    }
-    drops.forEach((d, x) => {
-      const from = Math.floor(d.y);
-      d.y += d.speed;
-      for (let r = from + 1; r <= Math.floor(d.y); r++) {
-        if (r >= 0 && r < h) {
-          ch[r * w + x] = glyph();
-          lum[r * w + x] = 1;
+    const { w, h, lum, ch } = this;
+    for (let i = 0; i < lum.length; i++) lum[i] *= 0.6;
+    this.stars.forEach((s, n) => {
+      const [x0, y0] = this._pos(s);
+      s.d += s.v;
+      s.v *= 1.12;
+      const [x1, y1] = this._pos(s);
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const glyph = this._streak(dx, dy);
+      const len = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
+      for (let k = 0; k <= len; k++) {
+        const t = len ? k / len : 1;
+        const x = Math.round(x0 + dx * t);
+        const y = Math.round(y0 + dy * t);
+        if (x < 0 || x >= w || y < 0 || y >= h) continue;
+        const i = y * w + x;
+        const l = Math.min(1, 0.3 + 0.7 * t * Math.min(1, s.d * 2)); // brighter at the head and further out
+        if (l >= lum[i]) {
+          lum[i] = l;
+          ch[i] = glyph;
         }
       }
-      if (d.y >= h) drops[x] = this._drop(2);
+      if (s.d > 1.05) this.stars[n] = this._star(false);
     });
   }
 
@@ -142,7 +165,7 @@ class Rain {
           s += ' ';
           continue;
         }
-        const code = l >= 1 ? this.head : this.shades[Math.min(RAIN_SHADES - 1, Math.floor(l * RAIN_SHADES))];
+        const code = l >= 0.95 ? this.head : this.shades[Math.min(WARP_SHADES - 1, Math.floor(l * WARP_SHADES))];
         if (code !== last) s += code;
         last = code;
         s += this.ch[i];
@@ -153,11 +176,11 @@ class Rain {
   }
 }
 
-// The start-up screen: rain across the full width (when there's colour), then who's listening.
-function banner(version, { agent, mode, cwd, linked }, rain = null) {
+// The start-up screen: hyperspace across the full width (when there's colour), then who's listening.
+function banner(version, { agent, mode, cwd, linked }, warp = null) {
   const agents = linked.length > 1 ? c.gray('   agents ') + linked.map((n) => hex(agentColor(n))(n)).join(c.gray(' · ')) : '';
   return [
-    ...(rain ? rain.rows() : []),
+    ...(warp ? warp.rows() : []),
     '',
     `  ${c.bold(gradient("DaVinci's Shell", PALETTE.gold, PALETTE.clay))}  ${c.gray('v' + version)}  ${c.italic(c.gray('type what you want — your agents do it'))}`,
     `  ${hex(agentColor(agent))(agent)}${c.gray(' · ' + mode + ' · ' + cwd)}${agents}`,
@@ -231,5 +254,5 @@ class Spinner {
 }
 
 module.exports = {
-  c, hex, gradient, renderMarkdown, banner, agentColor, Spinner, Rain, VERBS, PALETTE, useColor, stripAnsi, visibleWidth,
+  c, hex, gradient, renderMarkdown, banner, agentColor, Spinner, Hyperspace, VERBS, PALETTE, useColor, stripAnsi, visibleWidth,
 };
