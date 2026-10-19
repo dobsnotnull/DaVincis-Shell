@@ -87,47 +87,81 @@ function renderMarkdown(text) {
     .join('\n');
 }
 
-// The little Claude creature: a body and two leg frames, so it can walk.
-const CREATURE = ['▐▛█▜▌', ' ▘ ▘ ', ' ▝ ▝ '];
-const TRACK = 12; // columns the banner creature wanders across
+// Matrix-style rain for the top of the start-up screen, in Claude's clay.
+const RAIN_GLYPHS = [...'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ0123456789:=*+<>'];
+const RAIN_ROWS = 4;
+const RAIN_SHADES = 10;
+const glyph = () => RAIN_GLYPHS[Math.floor(Math.random() * RAIN_GLYPHS.length)];
 
-// Two rows of creature at column `x` of the track, legs on frame `step`.
-function creatureRows(x, step, color) {
-  const pad = (s) => ' '.repeat(x) + hex(color)(s) + ' '.repeat(TRACK - x - s.length);
-  return [pad(CREATURE[0]), pad(CREATURE[1 + (step % 2)])];
-}
-
-// Wandering back and forth: position and leg frame for a given tick.
-function wander(tick, width = TRACK - CREATURE[0].length) {
-  const span = width * 2;
-  const p = tick % span;
-  return { x: p <= width ? p : span - p, step: tick };
-}
-
-function banner(version, { agent, mode, cwd, linked }, tick = 0) {
-  const { x, step } = wander(tick);
-  const art = [' '.repeat(TRACK), ...creatureRows(x, step, agentColor(agent))];
-  const maxInfo = 44;
-  const where = cwd.length > maxInfo ? '…' + cwd.slice(-(maxInfo - 1)) : cwd;
-  const text = [
-    `${c.bold(gradient("DaVinci's Shell", PALETTE.gold, PALETTE.clay))}  ${c.gray('v' + version)}`,
-    c.italic(c.gray('type what you want — your agents do it')),
-    `${hex(agentColor(agent))(agent)}${c.gray(' · ' + mode + ' · ' + where)}`,
-  ];
-  const rows = art.map((a, i) => `  ${a}  ${text[i]}`);
-  const width = Math.max(...rows.map(visibleWidth)) + 3;
-  const edge = (s) => hex(PALETTE.gold)(s);
-  const line = (s) => edge('│') + padVisible(s, width) + edge('│');
-  const out = [
-    '',
-    edge('╭' + '─'.repeat(width) + '╮'),
-    ...rows.map(line),
-    edge('╰' + '─'.repeat(width) + '╯'),
-  ];
-  if (linked.length > 1) {
-    out.push(`  ${c.gray('agents')} ${linked.map((n) => hex(agentColor(n))(n)).join(c.gray(' · '))}`);
+class Rain {
+  constructor(width, rows = RAIN_ROWS, color = PALETTE.clay) {
+    this.w = width;
+    this.h = rows;
+    const base = hexToRgb(color);
+    const dark = [26, 23, 20]; // the DaVinci terminal background
+    this.head = `\x1b[${fgCode(mix(base, [255, 245, 235], 0.75))}m`;
+    this.shades = Array.from({ length: RAIN_SHADES }, (_, i) => `\x1b[${fgCode(mix(dark, base, (i + 1) / RAIN_SHADES))}m`);
+    this.ch = Array.from({ length: width * rows }, glyph);
+    this.lum = new Float32Array(width * rows);
+    this.drops = Array.from({ length: width }, () => this._drop(3));
+    for (let i = 0; i < 40; i++) this.step(); // start mid-shower, not on an empty sky
   }
-  return out.join('\n');
+
+  _drop(spread) {
+    return { y: -1 - Math.random() * this.h * spread, speed: 0.15 + Math.random() * 0.35, decay: 0.72 + Math.random() * 0.18 };
+  }
+
+  step() {
+    const { w, h, lum, ch, drops } = this;
+    for (let i = 0; i < lum.length; i++) {
+      lum[i] *= drops[i % w].decay;
+      if (lum[i] > 0.15 && Math.random() < 0.03) ch[i] = glyph();
+    }
+    drops.forEach((d, x) => {
+      const from = Math.floor(d.y);
+      d.y += d.speed;
+      for (let r = from + 1; r <= Math.floor(d.y); r++) {
+        if (r >= 0 && r < h) {
+          ch[r * w + x] = glyph();
+          lum[r * w + x] = 1;
+        }
+      }
+      if (d.y >= h) drops[x] = this._drop(2);
+    });
+  }
+
+  rows() {
+    const out = [];
+    for (let r = 0; r < this.h; r++) {
+      let s = '';
+      let last = null;
+      for (let x = 0; x < this.w; x++) {
+        const i = r * this.w + x;
+        const l = this.lum[i];
+        if (l < 0.08) {
+          s += ' ';
+          continue;
+        }
+        const code = l >= 1 ? this.head : this.shades[Math.min(RAIN_SHADES - 1, Math.floor(l * RAIN_SHADES))];
+        if (code !== last) s += code;
+        last = code;
+        s += this.ch[i];
+      }
+      out.push(s + '\x1b[39m');
+    }
+    return out;
+  }
+}
+
+// The start-up screen: rain across the full width (when there's colour), then who's listening.
+function banner(version, { agent, mode, cwd, linked }, rain = null) {
+  const agents = linked.length > 1 ? c.gray('   agents ') + linked.map((n) => hex(agentColor(n))(n)).join(c.gray(' · ')) : '';
+  return [
+    ...(rain ? rain.rows() : []),
+    '',
+    `  ${c.bold(gradient("DaVinci's Shell", PALETTE.gold, PALETTE.clay))}  ${c.gray('v' + version)}  ${c.italic(c.gray('type what you want — your agents do it'))}`,
+    `  ${hex(agentColor(agent))(agent)}${c.gray(' · ' + mode + ' · ' + cwd)}${agents}`,
+  ].join('\n');
 }
 
 // Things the agent is "doing" while it thinks. A few are borrowed from Claude,
@@ -140,9 +174,8 @@ const VERBS = [
   'Designing flying machines', 'Perfecting the smile', 'Measuring the Vitruvian man',
   'Inventing', 'Sculpting', 'Painting', 'Engineering',
 ];
-const GLYPHS = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
-const FRAME_MS = 80;
-const VERB_FRAMES = 40;
+const VERB_FRAMES = 40; // a new verb every few seconds
+const DOT_FRAMES = 4; // one more dot every 4 frames: "", ".", "..", "..."
 
 function shimmer(text, frame, base) {
   if (!useColor) return text;
@@ -160,25 +193,24 @@ function shimmer(text, frame, base) {
   );
 }
 
+// The "thinking" line: a shimmering verb with dots that fill in as a loading state.
+// It only builds the line; the live region (live.js) decides when to draw it.
 class Spinner {
-  constructor(stream = process.stdout) {
-    this.stream = stream;
-    this.timer = null;
-  }
-
-  get active() {
-    return this.timer !== null;
+  constructor() {
+    this.on = false;
+    this.verb = null;
   }
 
   start(color = PALETTE.clay, started = Date.now()) {
-    if (!this.stream.isTTY || this.timer) return;
+    this.on = true;
     this.color = color;
     this.started = started;
     this.frame = 0;
     this.verb = this._pick();
-    this.stream.write('\x1b[?25l');
-    this.timer = setInterval(() => this._render(), FRAME_MS);
-    this._render();
+  }
+
+  stop() {
+    this.on = false;
   }
 
   _pick() {
@@ -188,31 +220,16 @@ class Spinner {
     return v;
   }
 
-  line() {
+  line(hint = 'ctrl+c to stop') {
     if (this.frame > 0 && this.frame % VERB_FRAMES === 0) this.verb = this._pick();
-    const glyph = GLYPHS[Math.floor(this.frame / 2) % GLYPHS.length];
-    const { x } = wander(Math.floor(this.frame / 3), 6);
-    const walker = ' '.repeat(x) + hex(this.color)(CREATURE[0]) + ' '.repeat(6 - x);
+    const dots = '.'.repeat(Math.floor(this.frame / DOT_FRAMES) % 4).padEnd(3);
     const secs = Math.floor((Date.now() - this.started) / 1000);
-    return ` ${walker} ${hex(this.color)(glyph)} ${shimmer(this.verb + '…', this.frame, this.color)} ${c.gray(`(${secs}s · ctrl+c to stop)`)}`;
-  }
-
-  _render() {
-    this.stream.write('\r\x1b[2K' + this.line());
+    const s = ` ${shimmer(this.verb, this.frame, this.color)}${hex(this.color)(dots)} ${c.gray(`(${secs}s · ${hint})`)}`;
     this.frame++;
-  }
-
-  // Wipe the spinner line so other output can be printed; it redraws on the next tick.
-  clear() {
-    if (this.timer) this.stream.write('\r\x1b[2K');
-  }
-
-  stop() {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = null;
-    this.stream.write('\r\x1b[2K\x1b[?25h');
+    return s;
   }
 }
 
-module.exports = { c, hex, gradient, renderMarkdown, banner, agentColor, Spinner, CREATURE, VERBS, PALETTE, stripAnsi, visibleWidth };
+module.exports = {
+  c, hex, gradient, renderMarkdown, banner, agentColor, Spinner, Rain, VERBS, PALETTE, useColor, stripAnsi, visibleWidth,
+};

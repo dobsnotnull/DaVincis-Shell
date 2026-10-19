@@ -11,6 +11,8 @@ test('parseInput tells prompts, commands and shell lines apart', () => {
   assert.deepStrictEqual(parseInput('/agent codex'), { kind: 'command', name: 'agent', rest: 'codex' });
   assert.deepStrictEqual(parseInput('/HELP'), { kind: 'command', name: 'help', rest: '' });
   assert.deepStrictEqual(parseInput('clean up my desktop'), { kind: 'prompt', rest: 'clean up my desktop' });
+  assert.deepStrictEqual(parseInput('@Codex write a fizzbuzz'), { kind: 'mention', name: 'codex', rest: 'write a fizzbuzz' });
+  assert.deepStrictEqual(parseInput('@codex'), { kind: 'prompt', rest: '@codex' });
 });
 
 test('splitArgs honours quotes', () => {

@@ -58,6 +58,7 @@ const commands = {
       }
       console.log();
       console.log(`  Just type what you want and press Enter. ${c.gray('Lines starting with ! run directly in your shell.')}`);
+      console.log(c.gray('  @<agent> <request> asks another agent · keep typing while an agent works to queue messages · Esc stops it'));
       for (const [group, list] of Object.entries(groups)) {
         console.log(`\n  ${c.bold(c.gold(group))}`);
         for (const [name, cmd] of list) {
@@ -116,6 +117,36 @@ const commands = {
       if (!agent || !words.length) return shell.out.error('usage: /ask <agent> <request>');
       if (!agent.isLinked()) return shell.out.error(`${name} isn't installed`);
       await shell.runAgent(agent, words.join(' '));
+    },
+  },
+
+  stop: {
+    group: 'Agents',
+    instant: true,
+    desc: 'stop the running agent (also Esc or Ctrl+C)',
+    run(shell) {
+      if (!shell.running) return shell.out.hint('nothing is running');
+      shell.stop();
+    },
+  },
+
+  queue: {
+    group: 'Agents',
+    instant: true,
+    usage: '[clear|undo]',
+    desc: 'messages waiting for the agent: list, clear, or drop the last one',
+    run(shell, rest) {
+      const q = shell.queue;
+      if (rest === 'clear') {
+        const n = q.splice(0).length;
+        return shell.out.ok(n ? `dropped ${n} queued message${n > 1 ? 's' : ''}` : 'the queue is empty');
+      }
+      if (rest === 'undo') {
+        const last = q.pop();
+        return last ? shell.out.ok(`dropped "${last.line.trim()}"`) : shell.out.hint('the queue is empty');
+      }
+      if (!q.length) return shell.out.hint('the queue is empty — type while an agent works to queue a message');
+      q.forEach((item, i) => shell.out.info(`${c.gray(String(i + 1) + '.')} ${item.line.trim()}`));
     },
   },
 

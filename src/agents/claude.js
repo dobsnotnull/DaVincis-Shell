@@ -237,7 +237,13 @@ class ClaudeAgent {
         if (ev.subtype === 'init' && ev.session_id) this.sessionId = ev.session_id;
         break;
       case 'assistant':
-        if (ev.parent_tool_use_id) break; // subagent chatter
+        if (ev.parent_tool_use_id) {
+          // a subagent at work: show its tool calls nested under the Agent call, skip its chatter
+          for (const block of (ev.message && ev.message.content) || []) {
+            if (block.type === 'tool_use') out.subtool(block.name, summarizeInput(block.input));
+          }
+          break;
+        }
         for (const block of (ev.message && ev.message.content) || []) {
           if (block.type === 'text' && block.text.trim()) out.text(block.text);
           else if (block.type === 'tool_use') {

@@ -3,22 +3,22 @@
 A terminal where you type what you want and an AI agent does it: on your computer, in your files, and on GitHub.
 
 ```
-╭─────────────────────────────────────────────────────────╮
-│                                                         │
-│    ▐▛███▜▌     DaVinci's Shell  v0.2.0                  │
-│   ▝▜█████▛▘    type what you want — your agents do it   │
-│     ▘▘ ▝▝      claude · normal · ~\Desktop              │
-│                                                         │
-╰─────────────────────────────────────────────────────────╯
+ｹ3 ｾ ﾗ6=+ﾒｹ  ｹ  ｼ ｿ   ﾃ7  ﾇ   9 ﾋ       ﾋﾋ          9   <ﾁ0=  ｱ ﾂ
+ﾔｶ ｳﾇﾜｳﾘﾎ ﾚ >8  ﾆﾍ0 ﾙ  ﾔｾ ﾋ  >ﾖ ﾑ  1     ﾍ          2 ﾑ ﾁ8*:   ﾄ
+ ﾆ ﾔﾍ91 ｵ   ﾊ   ﾓﾖｹ ｿ  ﾋ1 ﾃ  *       3   ｽ+  =ﾉ ﾓ ｲｾﾑ ﾕ ﾁﾑ4  ｦ8
+    ﾌﾙ= +       ｵ+ﾏ ﾃﾊ ｾﾐ ﾐ  ﾋ      ﾄｽ   6ﾚﾓ <ﾛ ﾆ ﾐｵﾚ8  ﾙﾏ   ﾜ  =
 
-◆ claude ~\Desktop ❯ move all the screenshots on my desktop into a Screenshots folder
+  DaVinci's Shell  v0.3.0  type what you want — your agents do it
+  claude · normal · ~Desktop   agents claude · codex
 
- ✻ Mixing pigments… (3s · ctrl+c to stop)
-  ↳ PowerShell Get-ChildItem -File "C:\Users\you\Desktop" -Filter "Screenshot*"
+◆ claude ~Desktop ❯ move all the screenshots on my desktop into a Screenshots folder
+
+  ↳ PowerShell Get-ChildItem -File "C:UsersyouDesktop" -Filter "Screenshot*"
   ↳ PowerShell New-Item -ItemType Directory Screenshots; Move-Item Screenshot* Screenshots
-● Moved 14 screenshots into Desktop\Screenshots.
-
-  ✓ claude · 9.2s
+ Mixing pigments..  (3s · esc to stop · type to queue)
+  ⧗ queued  @codex write a README for the Screenshots folder
+  ❯ |
+```
 ```
 
 Claude is the default agent. DaVinci's Shell isn't tied to one AI, though: you can link **Codex**, **Gemini**, a local **Ollama** model, or any other command-line agent, and switch between them with `/agent <name>`.
@@ -99,8 +99,8 @@ To use the font in VS Code's terminal, add this to your settings:
 
 ## The look
 
-- **The Claude creature** sits in the start-up banner, coloured to match the active agent.
-- **The thinking spinner** shows a shimmering verb while the agent works, such as *Ruminating…*, *Salivating…*, *Percolating…*, or one of Leonardo's: *Mixing pigments…*, *Mirror-writing…*, *Designing flying machines…*. It changes every few seconds and shows the elapsed time.
+- **Matrix rain** in Claude's clay falls across the full width of the top of the screen when DaVinci starts, a few rows tall. It stops as soon as you start typing.
+- **The thinking line** shows a shimmering verb while the agent works, such as *Ruminating*, *Percolating*, or one of Leonardo's: *Mixing pigments*, *Mirror-writing*, *Designing flying machines*. Dots fill in after it (`.`, `..`, `...`) as a loading animation, and it shows the elapsed time.
 - **Each agent has its own colour.** Claude is clay, Codex is green, Gemini is blue, and linked agents are gold. The colour appears in the prompt, the reply bullets and the tool lines.
 - Colours are 24-bit where the terminal supports them, with a 256-colour fallback. `NO_COLOR` turns colour off.
 
@@ -118,6 +118,27 @@ summarize the open issues on dobsnotnull/task-ops
 ```
 
 Follow-up requests continue the same conversation. Use `/new` to start over.
+
+### While an agent works
+
+The prompt stays open, like the chat panel in VS Code:
+
+- **Keep typing.** Each message you send is queued and shown under the thinking line (`⧗ queued …`). They run in order once the agent finishes.
+- `/queue` lists what's waiting, `/queue undo` drops the last one, `/queue clear` drops them all. These run straight away instead of being queued.
+- **Esc** (or **Ctrl+C**, or `/stop`) stops the running agent. Anything queued still runs afterwards.
+- Questions and permission checks from the agent appear in the same place; type the answer and press Enter.
+- When Claude hands work to its own subagents, their tool calls show up indented under the `Agent` call.
+
+### Talking to other agents
+
+Start a message with `@<agent>` to send it to another linked agent without switching, the same as `/ask`:
+
+```
+@codex write a fizzbuzz in rust
+@gemini summarize this folder
+```
+
+Tab completes agent names after `@`. You can queue messages for different agents while one is working.
 
 Lines starting with `!` run straight in your shell (PowerShell on Windows), with no agent involved:
 
@@ -139,7 +160,9 @@ davinci -m safe "what would it take to upgrade this project to React 19?"
 | --- | --- |
 | `/agents` | list agents and which ones are linked |
 | `/agent <name>` | switch agents (alias `/use`) |
-| `/ask <agent> <request>` | send one request to another agent without switching |
+| `/ask <agent> <request>`, `@<agent> <request>` | send one request to another agent without switching |
+| `/stop` | stop the running agent (also Esc or Ctrl+C) |
+| `/queue [clear|undo]` | list, clear or trim messages queued while an agent works |
 | `/link <name> <command> [args…]` | link any CLI agent, e.g. `/link llama ollama run llama3.2` |
 | `/unlink <name>` | remove a linked agent |
 | `/mode [safe\|normal\|yolo]` | set how much the agent can do on its own |
@@ -154,7 +177,7 @@ davinci -m safe "what would it take to upgrade this project to React 19?"
 | `/terminal` | add the themed Windows Terminal profile |
 | `/history`, `/config`, `/clear`, `/exit` | the usual |
 
-Press Tab to complete commands and agent names. **Ctrl+C** stops a running agent; pressing it twice at an empty prompt quits.
+Press Tab to complete commands and agent names. **Esc** or **Ctrl+C** stops a running agent; pressing Ctrl+C twice at an empty prompt quits.
 
 ### Modes
 
@@ -198,10 +221,11 @@ DaVinci's Shell (readline prompt → parseInput)
       │
       ├── /command ────▶ handled locally (commands.js)
       ├── !cmd ────────▶ runs in PowerShell / sh
-      ├── /macro ──────▶ expanded into a request ──┐
+      ├── @agent ──────▶ that agent, once ─────────┐
+      ├── /macro ──────▶ expanded into a request ──┤
       └── plain text ──────────────────────────────┤
                                                    ▼
-                                  active agent adapter
+                                  active (or @mentioned) agent adapter
                     ┌──────────────────────────────┴───────────────────────────┐
                     ▼                                                          ▼
           claude adapter                                              cli adapter
@@ -225,7 +249,8 @@ src/agents/claude.js  Claude Code adapter (streaming JSON, sessions, permissions
 src/agents/cli.js     generic adapter for any command-line agent
 src/agents/index.js   builds agent instances from the config
 src/config.js         ~/.davinci/config.json, defaults, history
-src/ui.js             colours, banner + creature, thinking spinner, markdown rendering
+src/ui.js             colours, matrix-rain banner, thinking line, markdown rendering
+src/live.js           the live region while an agent works: thinking line, queue, open prompt
 src/terminal.js       Windows Terminal profile + colour scheme (--setup-terminal)
 src/util.js           PATH lookup, process spawning, arg parsing, templates
 test/                 unit tests (node --test)
@@ -233,7 +258,7 @@ test/                 unit tests (node --test)
 
 ### What happens when you press Enter
 
-1. **Queue.** The line goes into a queue, so anything you type while an agent is working runs afterwards.
+1. **Queue.** The line goes into a queue. While an agent works the prompt stays live, so anything you type is queued (and shown) and runs afterwards.
 2. **Parse.** `parseInput()` sorts the line into one of four kinds: a `/command`, a `!shell` line, a macro, or a plain request.
 3. **Context.** For agent requests, the shell builds a short **system note**: your OS, home folder, Desktop, current folder, whether `gh` is available, and an instruction to ask before doing anything destructive.
 4. **Dispatch.** The adapter starts the agent as a child process in your current folder. The prompt is always sent on **stdin**, so the shell never interprets the text of a request.

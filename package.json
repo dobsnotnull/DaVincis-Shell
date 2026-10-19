@@ -1,6 +1,6 @@
 {
   "name": "davincis-shell",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A terminal where you type what you want and an AI agent (Claude, Codex, Gemini, or your own) does it.",
   "bin": {
     "davinci": "bin/davinci.js"

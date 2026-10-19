@@ -117,6 +117,8 @@ function parseInput(line) {
   if (text.startsWith('!')) return { kind: 'shell', rest: text.slice(1).trim() };
   const m = text.match(/^\/([a-zA-Z][\w-]*)(?:\s+([\s\S]*))?$/);
   if (m) return { kind: 'command', name: m[1].toLowerCase(), rest: (m[2] || '').trim() };
+  const at = text.match(/^@([\w-]+)\s+([\s\S]+)$/);
+  if (at) return { kind: 'mention', name: at[1].toLowerCase(), rest: at[2].trim() };
   return { kind: 'prompt', rest: text };
 }
 

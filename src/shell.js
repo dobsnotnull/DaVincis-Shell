@@ -6,33 +6,38 @@ const { spawn } = require('child_process');
 const config = require('./config');
 const { createAgents } = require('./agents');
 const { commands, getCommand } = require('./commands');
-const { c, hex, renderMarkdown, banner, agentColor, Spinner, visibleWidth } = require('./ui');
+const { c, hex, renderMarkdown, banner, agentColor, Rain, useColor } = require('./ui');
+const { Live } = require('./live');
 const { IS_WIN, which, desktopDir, tildify, expandTemplate, parseInput } = require('./util');
 const { version } = require('../package.json');
 
-const spinner = new Spinner();
+const live = new Live();
 let speaker = 'claude';
 // Set by the Shell: reads one line from the user while an agent waits on it (null = cancelled).
 let readAnswer = async () => null;
 
-// Anything printed while the spinner runs clears its line first; it redraws on the next tick.
-const say = (fn) => (...args) => {
-  spinner.clear();
-  fn(...args);
-};
+// Anything printed while an agent runs goes above the live region (spinner, queue, prompt).
+const say = (fn) => (...args) => live.print(() => fn(...args));
+const write = say((s) => process.stdout.write(s));
 
 // Pause the spinner, show a question, and wait for the user's reply.
 async function ask(lines) {
-  const started = spinner.started;
-  const wasActive = spinner.active;
-  spinner.stop();
-  process.stdout.write(lines.join('\n') + '\n');
+  const wasSpinning = live.pauseSpinner();
+  write(lines.join('\n') + '\n');
   const answer = await readAnswer(`  ${hex(agentColor(speaker))('❯')} `);
-  if (wasActive && answer !== null) {
-    console.log();
-    spinner.start(agentColor(speaker), started);
-  }
+  if (wasSpinning && answer !== null) live.resumeSpinner();
   return answer;
+}
+
+// CLI agents stream raw text that can end mid-line; only whole lines go above the live region.
+const rawBuf = { out: '', err: '' };
+function raw(key, chunk) {
+  rawBuf[key] += chunk;
+  const i = rawBuf[key].lastIndexOf('\n');
+  if (i < 0) return;
+  const done = rawBuf[key].slice(0, i + 1);
+  rawBuf[key] = rawBuf[key].slice(i + 1);
+  write(key === 'err' ? c.gray(done) : done);
 }
 
 // Terminal output for agent runs and commands.
@@ -45,6 +50,8 @@ const out = {
   tool: say((name, detail) =>
     process.stdout.write(`  ${hex(agentColor(speaker))('↳')} ${c.bold(name)} ${c.gray(detail)}\n`)
   ),
+  // A tool call made by one of the agent's own subagents.
+  subtool: say((name, detail) => process.stdout.write(c.gray(`      ↳ ${name} ${detail}`) + '\n')),
   toolResult: say((msg) => process.stdout.write(c.gray(`    ⎿ ${msg}`) + '\n')),
   toolError: say((msg) => process.stdout.write(c.red(`    ✗ ${msg}`) + '\n')),
   // A question from the agent with numbered options. Resolves to the chosen label(s) or free text.
@@ -79,14 +86,11 @@ const out = {
     if (t === 'n' || t === 'no') return 'no';
     return a.trim();
   },
-  // Raw streams from CLI agents can end mid-line, so the spinner bows out for good.
-  raw: (chunk) => {
-    spinner.stop();
-    process.stdout.write(chunk);
-  },
-  rawDim: (chunk) => {
-    spinner.stop();
-    process.stdout.write(c.gray(chunk));
+  raw: (chunk) => raw('out', chunk),
+  rawDim: (chunk) => raw('err', chunk),
+  // Print whatever is left of a raw stream once the agent is done.
+  flush: () => {
+    for (const key of ['out', 'err']) if (rawBuf[key]) raw(key, '\n');
   },
   dim: say((msg) => console.log(c.gray(msg))),
   info: say((msg) => console.log(`  ${msg}`)),
@@ -96,7 +100,7 @@ const out = {
   error: say((msg) => console.log(`  ${c.red('✗')} ${msg}`)),
 };
 
-process.on('exit', () => spinner.stop());
+process.on('exit', () => live.stop());
 
 class Shell {
   constructor({ agent, mode } = {}) {
@@ -109,6 +113,8 @@ class Shell {
     this.running = null;
     this.hasGh = Boolean(which('gh'));
     this.answering = null;
+    this.answerPrompt = '';
+    this.queue = live.queue; // lines typed while something runs, shown under the spinner
     readAnswer = (prompt) => this.question(prompt);
 
     const wanted = agent || this.config.defaultAgent;
@@ -118,6 +124,11 @@ class Shell {
 
   get agent() {
     return this.agents.get(this.agentName);
+  }
+
+  // The prompt can be typed into while an agent runs (stdin is a terminal and the shell is open).
+  get liveInput() {
+    return Boolean(this.rl && process.stdin.isTTY);
   }
 
   systemPrompt() {
@@ -142,9 +153,19 @@ class Shell {
     console.log();
     this.running = agent;
     speaker = agent.name;
-    spinner.start(agentColor(agent.name));
+    if (this.liveInput) {
+      this.rl.setPrompt(this.queuePrompt());
+      this.resumeInput();
+    }
+    live.start({
+      color: agentColor(agent.name),
+      input: this.liveInput,
+      hint: this.liveInput ? 'esc to stop · type to queue' : 'ctrl+c to stop',
+    });
     const result = await agent.run(prompt, { cwd: this.cwd, mode: this.mode, systemPrompt: this.systemPrompt(), out });
-    spinner.stop();
+    out.flush();
+    live.stop();
+    if (this.liveInput) this.suspendInput();
     this.running = null;
     const bits = [];
     if (result.durationMs) bits.push(`${(result.durationMs / 1000).toFixed(1)}s`);
@@ -154,6 +175,14 @@ class Shell {
     if (result.ok) console.log(c.gray(`  ${c.green('✓')} ${agent.name}${bits.length ? ' · ' + bits.join(' · ') : ''}`));
     console.log();
     return result;
+  }
+
+  // Stop the running agent; anything queued still runs afterwards.
+  stop() {
+    if (!this.running) return;
+    const { name } = this.running;
+    this.running.cancel();
+    out.warn(`stopped ${name}`);
   }
 
   runShell(cmdline) {
@@ -175,6 +204,10 @@ class Shell {
 
     if (input.kind === 'shell') return this.runShell(input.rest);
     if (input.kind === 'prompt') return this.runAgent(this.agent, input.rest);
+    if (input.kind === 'mention') {
+      const agent = this.agents.get(input.name);
+      return this.runAgent(agent || this.agent, agent ? input.rest : line.trim());
+    }
 
     const command = getCommand(input.name);
     if (command) return command.run(this, input.rest);
@@ -194,6 +227,10 @@ class Shell {
     return `${c.gold('◆')} ${c.bold(color(this.agentName))}${mode} ${c.gray(tildify(this.cwd))} ${color('❯')} `;
   }
 
+  queuePrompt() {
+    return `  ${c.gray('❯')} `;
+  }
+
   completer(line) {
     const names = [...Object.keys(commands), ...Object.keys(this.config.macros)].map((n) => '/' + n);
     const agentCmd = line.match(/^\/(agent|use|ask|unlink)\s+(\S*)$/);
@@ -201,6 +238,8 @@ class Shell {
       const hits = [...this.agents.keys()].filter((n) => n.startsWith(agentCmd[2]));
       return [hits.map((h) => `/${agentCmd[1]} ${h}`), line];
     }
+    const mention = line.match(/^@(\S*)$/);
+    if (mention) return [[...this.agents.keys()].filter((n) => n.startsWith(mention[1])).map((n) => `@${n} `), line];
     if (line.startsWith('/') && !line.includes(' ')) return [names.filter((n) => n.startsWith(line)), line];
     return [[], line];
   }
@@ -220,6 +259,7 @@ class Shell {
   question(prompt) {
     if (!this.rl) {
       // one-shot mode (`davinci "<request>"`): borrow the terminal just for this answer
+      live.hide();
       return new Promise((resolve) => {
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         let answer = null;
@@ -228,13 +268,18 @@ class Shell {
           rl.close();
         });
         rl.on('SIGINT', () => rl.close());
-        rl.on('close', () => resolve(answer));
+        rl.on('close', () => {
+          live.show();
+          resolve(answer);
+        });
       });
     }
     return new Promise((resolve) => {
       this.answering = resolve;
-      this.resumeInput();
+      this.answerPrompt = prompt;
       this.rl.setPrompt(prompt);
+      if (live.active && live.input) return live.refresh();
+      this.resumeInput();
       this.rl.prompt();
     });
   }
@@ -242,23 +287,24 @@ class Shell {
   answer(value) {
     const resolve = this.answering;
     this.answering = null;
-    this.suspendInput();
+    if (live.active && live.input) {
+      this.rl.setPrompt(this.queuePrompt());
+      live.refresh();
+    } else {
+      this.suspendInput();
+    }
     resolve(value);
   }
 
-  // The banner creature wanders about until the user starts typing.
-  animateBanner(info, linesBelow) {
-    if (!process.stdout.isTTY || !process.stdin.isTTY) return;
-    const first = banner(version, info).split('\n');
-    if ((process.stdout.columns || 0) <= visibleWidth(first[1])) return; // a wrapped box would smear
-    const rows = [3, 4]; // the creature's lines within the banner
-    let tick = 0;
+  // Rain falls across the top of the screen until the user starts typing.
+  animateBanner(rain, rows, linesBelow) {
+    if (!rain || !process.stdin.isTTY) return;
     const timer = setInterval(() => {
-      const lines = banner(version, info, ++tick).split('\n');
+      rain.step();
       let s = '\x1b7\x1b[?25l';
-      for (const i of rows) s += `\x1b8\x1b[${first.length + linesBelow - i}A\r${lines[i]}`;
+      rain.rows().forEach((row, i) => (s += `\x1b8\x1b[${rows + linesBelow - i}A\r${row}`));
       process.stdout.write(s + '\x1b8\x1b[?25h');
-    }, 160);
+    }, 80);
     const stop = () => {
       clearInterval(timer);
       process.stdin.off('keypress', stop);
@@ -271,13 +317,15 @@ class Shell {
   start() {
     const linked = [...this.agents].filter(([, a]) => a.isLinked()).map(([n]) => n);
     const info = { agent: this.agentName, mode: this.mode, cwd: tildify(this.cwd), linked };
-    console.log(banner(version, info));
+    const rain = useColor && process.stdout.isTTY ? new Rain(Math.max(1, (process.stdout.columns || 80) - 1)) : null;
+    const text = banner(version, info, rain);
+    console.log(text);
     let below = 2;
     if (!linked.length) {
       out.warn('no agents found — install Claude Code (https://claude.com/claude-code) or /link one');
       below++;
     }
-    console.log(`  ${c.gray('/help for commands · /agent <name> to switch · ctrl+c stops a running agent')}\n`);
+    console.log(`  ${c.gray('/help for commands · @agent to ask another agent · esc stops a running agent · keep typing to queue')}\n`);
 
     this.rl = readline.createInterface({
       input: process.stdin,
@@ -290,35 +338,40 @@ class Shell {
     let lastSigint = 0;
     this.rl.on('SIGINT', () => {
       if (this.answering) {
-        process.stdout.write('\n');
+        if (!live.active) process.stdout.write('\n');
         return this.answer(null);
       }
       if (this.rl.line) {
+        this.rl.write(null, { ctrl: true, name: 'e' });
         this.rl.write(null, { ctrl: true, name: 'u' });
         return;
       }
+      if (this.running) return this.stop();
+      if (this.busy) return;
       if (Date.now() - lastSigint < 1500) return this.exit();
       lastSigint = Date.now();
       console.log(c.gray('\n  (Ctrl+C again or /exit to quit)'));
       this.rl.prompt();
     });
-    process.on('SIGINT', () => {
-      if (this.running) {
-        this.running.cancel();
-        console.log(c.yellow(`\n  stopped ${this.running.name}`));
-      }
+    process.on('SIGINT', () => this.stop());
+    // Esc stops the running agent, like in the editor chat.
+    process.stdin.on('keypress', (s, key) => {
+      if (!key || key.name !== 'escape' || !this.running || !live.active) return;
+      if (this.answering) this.answer(null);
+      else this.stop();
     });
 
     // Lines typed (or piped) while something is running wait their turn.
-    const queue = [];
     let closed = false;
     const drain = async () => {
       if (this.busy) return;
       this.busy = true;
       this.suspendInput();
-      while (queue.length) {
+      while (this.queue.length) {
+        const { line, echo } = this.queue.shift();
+        if (echo) console.log(this.promptText() + line);
         try {
-          await this.handleLine(queue.shift());
+          await this.handleLine(line);
         } catch (err) {
           out.error(err.message);
         }
@@ -327,11 +380,23 @@ class Shell {
       if (closed) return this.exit();
       this.resumeInput();
       this.rl.setPrompt(this.promptText());
-      this.rl.prompt();
+      this.rl.prompt(true);
     };
     this.rl.on('line', (line) => {
-      if (this.answering) return this.answer(line);
-      queue.push(line);
+      if (live.active && live.input) live.submitted(this.rl.getPrompt(), line);
+      if (this.answering) {
+        if (live.active) write(this.answerPrompt + line + '\n');
+        return this.answer(line);
+      }
+      if (this.busy) {
+        // a few commands act right away instead of waiting in the queue
+        const input = parseInput(line);
+        const command = input.kind === 'command' && getCommand(input.name);
+        if (command && command.instant) command.run(this, input.rest);
+        else if (input.kind !== 'empty') this.queue.push({ line, echo: true });
+        return live.refresh();
+      }
+      this.queue.push({ line, echo: false });
       drain();
     });
     this.rl.on('close', () => {
@@ -342,10 +407,11 @@ class Shell {
 
     this.rl.setPrompt(this.promptText());
     this.rl.prompt();
-    this.animateBanner(info, below);
+    this.animateBanner(rain, text.split('\n').length, below);
   }
 
   exit() {
+    live.stop();
     console.log(c.gray('\n  ciao 👋\n'));
     process.exit(0);
   }
