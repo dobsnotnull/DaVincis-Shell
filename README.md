@@ -180,6 +180,7 @@ davinci -m safe "what would it take to upgrade this project to React 19?"
 | `/model [name\|default]` | change the model (Claude: `opus`, `sonnet`, …) |
 | `/new` | start a fresh conversation |
 | `/status` | show the agent, mode, folder, session and spend |
+| `/bionic [agent]` | score how fully an agent is wired into the shell (0–100%) and what would raise it |
 | `/cd`, `/desktop`, `/home`, `/pwd`, `/ls` | move around; agents work in the current folder |
 | `/open <file\|folder\|url\|app>` | open something with its default app |
 | `/repos`, `/issues`, `/prs`, `/web` | quick GitHub views (no agent, instant) |

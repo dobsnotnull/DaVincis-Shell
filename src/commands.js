@@ -9,6 +9,7 @@ const { createAgent } = require('./agents');
 const config = require('./config');
 const { c, hex, agentColor } = require('./ui');
 const { setupTerminal } = require('./terminal');
+const bionic = require('./bionic');
 
 const MODES = {
   safe: 'look and plan only — no changes',
@@ -237,6 +238,36 @@ const commands = {
       if (a.sessionId) console.log(`  session ${c.gray(a.sessionId)}`);
       if (a.costUsd && process.env.ANTHROPIC_API_KEY) console.log(`  spend   ~$${a.costUsd.toFixed(4)}`);
       console.log();
+    },
+  },
+
+  bionic: {
+    group: 'Agents',
+    usage: '[agent]',
+    desc: 'how fully an agent is wired into the shell, as a %',
+    run(shell, rest) {
+      const agent = rest ? shell.agents.get(rest) : shell.agent;
+      if (!agent) return shell.out.error(`no agent called "${rest}" — see /agents`);
+      const { checks, percent } = bionic.check(agent, { cwd: shell.cwd, mode: shell.mode });
+      const width = 30;
+      const filled = Math.round((percent / 100) * width);
+      const color = percent >= 80 ? c.green : percent >= 50 ? c.yellow : c.red;
+      console.log();
+      console.log(`  ${hex(agentColor(agent.name))(c.bold(agent.name))} bionic compatibility ${color(c.bold(percent + '%'))}`);
+      console.log(`  ${color('█'.repeat(filled))}${c.gray('░'.repeat(width - filled))}`);
+      let group = null;
+      for (const ch of checks) {
+        if (ch.group !== group) {
+          group = ch.group;
+          console.log(`\n  ${c.bold(c.gold(group))}`);
+        }
+        const mark = ch.got >= 1 ? c.green('✓') : ch.got > 0 ? c.yellow('◐') : c.red('✗');
+        const pts = c.gray(`${+(ch.weight * ch.got).toFixed(1)}/${ch.weight}`.padStart(7));
+        const fix = ch.got < 1 ? c.gray(` — ${ch.fix}`) : '';
+        console.log(`    ${mark} ${pts}  ${ch.label}${fix}`);
+      }
+      const gap = 100 - percent;
+      console.log(c.gray(`\n  ${gap ? `full bionic compatibility would unlock the other ${gap}%` : 'fully bionic — nothing left to unlock'}\n`));
     },
   },
 
