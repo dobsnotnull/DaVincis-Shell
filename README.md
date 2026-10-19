@@ -3,10 +3,6 @@
 A terminal where you type what you want and an AI agent does it: on your computer, in your files, and on GitHub.
 
 ```
-ｹ3 ｾ ﾗ6=+ﾒｹ  ｹ  ｼ ｿ   ﾃ7  ﾇ   9 ﾋ       ﾋﾋ          9   <ﾁ0=  ｱ ﾂ
-ﾔｶ ｳﾇﾜｳﾘﾎ ﾚ >8  ﾆﾍ0 ﾙ  ﾔｾ ﾋ  >ﾖ ﾑ  1     ﾍ          2 ﾑ ﾁ8*:   ﾄ
- ﾆ ﾔﾍ91 ｵ   ﾊ   ﾓﾖｹ ｿ  ﾋ1 ﾃ  *       3   ｽ+  =ﾉ ﾓ ｲｾﾑ ﾕ ﾁﾑ4  ｦ8
-    ﾌﾙ= +       ｵ+ﾏ ﾃﾊ ｾﾐ ﾐ  ﾋ      ﾄｽ   6ﾚﾓ <ﾛ ﾆ ﾐｵﾚ8  ﾙﾏ   ﾜ  =
 
   DaVinci's Shell  v0.3.0  type what you want — your agents do it
   claude · normal · ~Desktop   agents claude · codex
