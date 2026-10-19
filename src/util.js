@@ -61,9 +61,21 @@ function killTree(child) {
   }
 }
 
+// On Linux the desktop folder can be renamed or localised; user-dirs.dirs says where it is.
+function xdgDesktop(home) {
+  try {
+    const dirs = fs.readFileSync(path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'user-dirs.dirs'), 'utf8');
+    const m = dirs.match(/^XDG_DESKTOP_DIR="(.*)"/m);
+    return m ? m[1].replace(/^\$HOME/, home) : null;
+  } catch {
+    return null;
+  }
+}
+
 function desktopDir() {
   const home = os.homedir();
   const candidates = [path.join(home, 'Desktop'), path.join(home, 'OneDrive', 'Desktop')];
+  if (process.platform === 'linux') candidates.unshift(xdgDesktop(home) || candidates[0]);
   return candidates.find((p) => fs.existsSync(p)) || candidates[0];
 }
 

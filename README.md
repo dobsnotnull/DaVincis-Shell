@@ -36,7 +36,7 @@ Claude is the default agent. DaVinci's Shell isn't tied to one AI, though: you c
 
 ### 1. Install Node.js
 
-You need **Node.js 18 or newer**. Download it from [nodejs.org](https://nodejs.org), then check the version:
+DaVinci runs on **Windows, macOS and Linux**. You need **Node.js 18 or newer**. Download it from [nodejs.org](https://nodejs.org), then check the version:
 
 ```sh
 node --version
@@ -89,7 +89,18 @@ The banner lists the agents it found. Type `/agents` to see their status, then t
 davinci --setup-terminal
 ```
 
-On Windows, this adds a **DaVinci's Shell** profile to Windows Terminal. The profile has a warm "DaVinci" colour scheme, a bar cursor, a small 6pt font, a see-through blurred (acrylic) background like VS Code's Vibrancy extension, and the [JetBrains Mono](https://www.jetbrains.com/lp/mono/) font if it's installed (otherwise Cascadia Code). Restart Windows Terminal and pick the profile from the ▾ menu. Your existing `settings.json` isn't changed, because the profile is installed as a separate fragment.
+This adds a **DaVinci's Shell** profile to every supported terminal it finds. The profile has a warm "DaVinci" colour scheme, a bar cursor, a small 6pt font, a see-through blurred background like VS Code's Vibrancy extension, and the [JetBrains Mono](https://www.jetbrains.com/lp/mono/) font if it's installed (otherwise Cascadia Code, Menlo or DejaVu Sans Mono). Your own profiles and config files aren't changed.
+
+| Terminal | Where the profile goes | How to open it |
+| --- | --- | --- |
+| Windows Terminal | a settings fragment | restart it, pick the profile from the ▾ menu |
+| iTerm2 (macOS) | a dynamic profile | Profiles menu |
+| kitty | `~/.config/kitty/davinci.conf` | `kitty --config ~/.config/kitty/davinci.conf` |
+| Alacritty | `~/.config/alacritty/davinci.toml` | `alacritty --config-file ~/.config/alacritty/davinci.toml` |
+| Konsole | `~/.local/share/konsole/DaVinci.profile` | `konsole --profile DaVinci` |
+| GNOME Terminal | a dconf profile | the ▾ menu (see-through, but GNOME doesn't blur) |
+
+macOS's built-in Terminal.app isn't supported yet. Use iTerm2, kitty or Alacritty there.
 
 To use the font in VS Code's terminal, add this to your settings:
 
@@ -174,7 +185,7 @@ davinci -m safe "what would it take to upgrade this project to React 19?"
 | `/repos`, `/issues`, `/prs`, `/web` | quick GitHub views (no agent, instant) |
 | `/gh <args…>` | run any `gh` command |
 | `/macros`, `/macro add <name> <text>` | list or create your own `/commands` |
-| `/terminal` | add the themed Windows Terminal profile |
+| `/terminal` | add the themed DaVinci terminal profile |
 | `/history`, `/config`, `/clear`, `/exit` | the usual |
 
 Press Tab to complete commands and agent names. **Esc** or **Ctrl+C** stops a running agent; pressing Ctrl+C twice at an empty prompt quits.
@@ -251,7 +262,7 @@ src/agents/index.js   builds agent instances from the config
 src/config.js         ~/.davinci/config.json, defaults, history
 src/ui.js             colours, hyperspace banner, thinking line, markdown rendering
 src/live.js           the live region while an agent works: thinking line, queue, open prompt
-src/terminal.js       Windows Terminal profile + colour scheme (--setup-terminal)
+src/terminal.js       terminal profiles + colour scheme (--setup-terminal)
 src/util.js           PATH lookup, process spawning, arg parsing, templates
 test/                 unit tests (node --test)
 ```

@@ -8,7 +8,7 @@ const { IS_WIN, which, splitArgs, desktopDir, tildify, expandHome } = require('.
 const { createAgent } = require('./agents');
 const config = require('./config');
 const { c, hex, agentColor } = require('./ui');
-const { setupWindowsTerminal } = require('./terminal');
+const { setupTerminal } = require('./terminal');
 
 const MODES = {
   safe: 'look and plan only — no changes',
@@ -408,9 +408,9 @@ const commands = {
 
   terminal: {
     group: 'Shell',
-    desc: 'add a themed DaVinci profile to Windows Terminal',
+    desc: 'add a themed DaVinci profile to your terminal',
     run(shell) {
-      const result = setupWindowsTerminal();
+      const result = setupTerminal();
       (result.ok ? shell.out.ok : shell.out.warn)(result.message);
     },
   },

@@ -1,6 +1,7 @@
 'use strict';
 
 const os = require('os');
+const path = require('path');
 const readline = require('readline');
 const { spawn } = require('child_process');
 const config = require('./config');
@@ -135,7 +136,7 @@ class Shell {
     return [
       "You are being driven from DaVinci's Shell, a terminal where the user types plain-language requests.",
       'Act on them directly: run commands, read and edit files, and use your tools rather than explaining how.',
-      `Machine: ${os.type()} (${process.platform}${IS_WIN ? ', prefer PowerShell commands' : ''}).`,
+      `Machine: ${os.type()} (${process.platform}${IS_WIN ? ', prefer PowerShell commands' : `, shell: ${path.basename(process.env.SHELL || 'sh')}`}).`,
       `Home folder: ${os.homedir()}. Desktop: ${desktopDir()}. Current folder: ${this.cwd}.`,
       this.hasGh ? 'The GitHub CLI (gh) is installed and logged in; use it for anything on GitHub.' : '',
       'Keep replies short, this is a terminal.',

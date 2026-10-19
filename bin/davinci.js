@@ -14,7 +14,7 @@ usage:
 options:
   -a, --agent <name>   agent to start with (claude, codex, gemini, or one you linked)
   -m, --mode <mode>    safe | normal | yolo
-  --setup-terminal     add a themed "DaVinci's Shell" profile to Windows Terminal
+  --setup-terminal     add a themed "DaVinci's Shell" terminal profile
   -v, --version        print the version
   -h, --help           show this help
 `;
@@ -26,7 +26,7 @@ async function main(argv) {
     const arg = argv[i];
     if (arg === '-h' || arg === '--help') return console.log(HELP);
     if (arg === '-v' || arg === '--version') return console.log(version);
-    if (arg === '--setup-terminal') return console.log(require('../src/terminal').setupWindowsTerminal().message);
+    if (arg === '--setup-terminal') return console.log(require('../src/terminal').setupTerminal().message);
     if (arg === '-a' || arg === '--agent') opts.agent = argv[++i];
     else if (arg === '-m' || arg === '--mode') opts.mode = argv[++i];
     else words.push(arg);
