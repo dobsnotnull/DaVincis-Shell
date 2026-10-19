@@ -3,10 +3,20 @@
 A terminal where you type what you want and an AI agent does it: on your computer, in your files, and on GitHub.
 
 ```
+╭─────────────────────────────────────────────────────────╮
+│                                                         │
+│    ▐▛███▜▌     DaVinci's Shell  v0.2.0                  │
+│   ▝▜█████▛▘    type what you want — your agents do it   │
+│     ▘▘ ▝▝      claude · normal · ~\Desktop              │
+│                                                         │
+╰─────────────────────────────────────────────────────────╯
+
 ◆ claude ~\Desktop ❯ move all the screenshots on my desktop into a Screenshots folder
+
+ ✻ Mixing pigments… (3s · ctrl+c to stop)
   ↳ PowerShell Get-ChildItem -File "C:\Users\you\Desktop" -Filter "Screenshot*"
   ↳ PowerShell New-Item -ItemType Directory Screenshots; Move-Item Screenshot* Screenshots
-Moved 14 screenshots into Desktop\Screenshots.
+● Moved 14 screenshots into Desktop\Screenshots.
 
   ✓ claude · 9.2s
 ```
@@ -73,6 +83,27 @@ davinci
 
 The banner lists the agents it found. Type `/agents` to see their status, then type a request in plain language.
 
+### 6. (Optional) Make the terminal look the part
+
+```sh
+davinci --setup-terminal
+```
+
+On Windows, this adds a **DaVinci's Shell** profile to Windows Terminal. The profile has a warm "DaVinci" colour scheme, a bar cursor, and the [JetBrains Mono](https://www.jetbrains.com/lp/mono/) font if it's installed (otherwise Cascadia Code). Restart Windows Terminal and pick the profile from the ▾ menu. Your existing `settings.json` isn't changed, because the profile is installed as a separate fragment.
+
+To use the font in VS Code's terminal, add this to your settings:
+
+```json
+"terminal.integrated.fontFamily": "'JetBrains Mono', Consolas, monospace"
+```
+
+## The look
+
+- **The Claude creature** sits in the start-up banner, coloured to match the active agent.
+- **The thinking spinner** shows a shimmering verb while the agent works, such as *Ruminating…*, *Salivating…*, *Percolating…*, or one of Leonardo's: *Mixing pigments…*, *Mirror-writing…*, *Designing flying machines…*. It changes every few seconds and shows the elapsed time.
+- **Each agent has its own colour.** Claude is clay, Codex is green, Gemini is blue, and linked agents are gold. The colour appears in the prompt, the reply bullets and the tool lines.
+- Colours are 24-bit where the terminal supports them, with a 256-colour fallback. `NO_COLOR` turns colour off.
+
 ---
 
 ## Using it
@@ -120,6 +151,7 @@ davinci -m safe "what would it take to upgrade this project to React 19?"
 | `/repos`, `/issues`, `/prs`, `/web` | quick GitHub views (no agent, instant) |
 | `/gh <args…>` | run any `gh` command |
 | `/macros`, `/macro add <name> <text>` | list or create your own `/commands` |
+| `/terminal` | add the themed Windows Terminal profile |
 | `/history`, `/config`, `/clear`, `/exit` | the usual |
 
 Press Tab to complete commands and agent names. **Ctrl+C** stops a running agent; pressing it twice at an empty prompt quits.
@@ -193,7 +225,8 @@ src/agents/claude.js  Claude Code adapter (streaming JSON, sessions, permissions
 src/agents/cli.js     generic adapter for any command-line agent
 src/agents/index.js   builds agent instances from the config
 src/config.js         ~/.davinci/config.json, defaults, history
-src/ui.js             colours, banner, light markdown rendering
+src/ui.js             colours, banner + creature, thinking spinner, markdown rendering
+src/terminal.js       Windows Terminal profile + colour scheme (--setup-terminal)
 src/util.js           PATH lookup, process spawning, arg parsing, templates
 test/                 unit tests (node --test)
 ```

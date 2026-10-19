@@ -7,7 +7,8 @@ const { spawn } = require('child_process');
 const { IS_WIN, which, splitArgs, desktopDir, tildify, expandHome } = require('./util');
 const { createAgent } = require('./agents');
 const config = require('./config');
-const { c } = require('./ui');
+const { c, hex, agentColor } = require('./ui');
+const { setupWindowsTerminal } = require('./terminal');
 
 const MODES = {
   safe: 'look and plan only — no changes',
@@ -80,9 +81,10 @@ const commands = {
       console.log();
       for (const [name, agent] of shell.agents) {
         const active = name === shell.agentName;
-        const mark = active ? c.gold('●') : ' ';
+        const mark = active ? hex(agentColor(name))('●') : ' ';
         const status = agent.isLinked() ? c.green('linked'.padEnd(14)) : c.gray('not installed'.padEnd(14));
-        console.log(`  ${mark} ${(active ? c.bold : String)(name.padEnd(10))} ${status} ${c.gray(agent.description)}`);
+        const label = agent.isLinked() ? hex(agentColor(name))(name.padEnd(10)) : c.gray(name.padEnd(10));
+        console.log(`  ${mark} ${active ? c.bold(label) : label} ${status} ${c.gray(agent.description)}`);
       }
       console.log(c.gray('\n  /agent <name> to switch · /link <name> <command...> to add your own\n'));
     },
@@ -370,6 +372,15 @@ const commands = {
     async run(shell) {
       shell.out.info(tildify(config.CONFIG_FILE));
       await openTarget(config.CONFIG_FILE, shell.cwd);
+    },
+  },
+
+  terminal: {
+    group: 'Shell',
+    desc: 'add a themed DaVinci profile to Windows Terminal',
+    run(shell) {
+      const result = setupWindowsTerminal();
+      (result.ok ? shell.out.ok : shell.out.warn)(result.message);
     },
   },
 

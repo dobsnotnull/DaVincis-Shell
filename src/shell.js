@@ -6,24 +6,48 @@ const { spawn } = require('child_process');
 const config = require('./config');
 const { createAgents } = require('./agents');
 const { commands, getCommand } = require('./commands');
-const { c, renderMarkdown, banner } = require('./ui');
+const { c, hex, renderMarkdown, banner, agentColor, Spinner } = require('./ui');
 const { IS_WIN, which, desktopDir, tildify, expandTemplate, parseInput } = require('./util');
 const { version } = require('../package.json');
 
+const spinner = new Spinner();
+let speaker = 'claude';
+
+// Anything printed while the spinner runs clears its line first; it redraws on the next tick.
+const say = (fn) => (...args) => {
+  spinner.clear();
+  fn(...args);
+};
+
 // Terminal output for agent runs and commands.
 const out = {
-  text: (md) => process.stdout.write(renderMarkdown(md.trim()) + '\n\n'),
-  tool: (name, detail) => process.stdout.write(c.gray(`  ↳ ${c.bold(name)} ${detail}`) + '\n'),
-  toolError: (msg) => process.stdout.write(c.red(`    ✗ ${msg}`) + '\n'),
-  raw: (chunk) => process.stdout.write(chunk),
-  rawDim: (chunk) => process.stdout.write(c.gray(chunk)),
-  dim: (msg) => console.log(c.gray(msg)),
-  info: (msg) => console.log(`  ${msg}`),
-  ok: (msg) => console.log(`  ${c.green('✓')} ${msg}`),
-  warn: (msg) => console.log(`  ${c.yellow('!')} ${msg}`),
-  hint: (msg) => console.log(c.gray(`  ${msg}`)),
-  error: (msg) => console.log(`  ${c.red('✗')} ${msg}`),
+  text: say((md) => {
+    const [first, ...rest] = renderMarkdown(md.trim()).split('\n');
+    const body = [first, ...rest.map((l) => '  ' + l)].join('\n');
+    process.stdout.write(`${hex(agentColor(speaker))('●')} ${body}\n\n`);
+  }),
+  tool: say((name, detail) =>
+    process.stdout.write(`  ${hex(agentColor(speaker))('↳')} ${c.bold(name)} ${c.gray(detail)}\n`)
+  ),
+  toolError: say((msg) => process.stdout.write(c.red(`    ✗ ${msg}`) + '\n')),
+  // Raw streams from CLI agents can end mid-line, so the spinner bows out for good.
+  raw: (chunk) => {
+    spinner.stop();
+    process.stdout.write(chunk);
+  },
+  rawDim: (chunk) => {
+    spinner.stop();
+    process.stdout.write(c.gray(chunk));
+  },
+  dim: say((msg) => console.log(c.gray(msg))),
+  info: say((msg) => console.log(`  ${msg}`)),
+  ok: say((msg) => console.log(`  ${c.green('✓')} ${msg}`)),
+  warn: say((msg) => console.log(`  ${c.yellow('!')} ${msg}`)),
+  hint: say((msg) => console.log(c.gray(`  ${msg}`))),
+  error: say((msg) => console.log(`  ${c.red('✗')} ${msg}`)),
 };
+
+process.on('exit', () => spinner.stop());
 
 class Shell {
   constructor({ agent, mode } = {}) {
@@ -66,7 +90,10 @@ class Shell {
     }
     console.log();
     this.running = agent;
+    speaker = agent.name;
+    spinner.start(agentColor(agent.name));
     const result = await agent.run(prompt, { cwd: this.cwd, mode: this.mode, systemPrompt: this.systemPrompt(), out });
+    spinner.stop();
     this.running = null;
     const bits = [];
     if (result.durationMs) bits.push(`${(result.durationMs / 1000).toFixed(1)}s`);
@@ -110,7 +137,8 @@ class Shell {
 
   promptText() {
     const mode = this.mode === 'normal' ? '' : this.mode === 'yolo' ? c.red(' yolo') : c.yellow(` ${this.mode}`);
-    return `${c.gold('◆')} ${c.bold(this.agentName)}${mode} ${c.blue(tildify(this.cwd))} ${c.gold('❯')} `;
+    const color = hex(agentColor(this.agentName));
+    return `${c.gold('◆')} ${c.bold(color(this.agentName))}${mode} ${c.gray(tildify(this.cwd))} ${color('❯')} `;
   }
 
   completer(line) {
@@ -136,14 +164,12 @@ class Shell {
   }
 
   start() {
-    console.log(banner(version));
     const linked = [...this.agents].filter(([, a]) => a.isLinked()).map(([n]) => n);
-    if (linked.length) {
-      console.log(`  ${c.gray('linked agents:')} ${linked.map((n) => (n === this.agentName ? c.bold(c.gold(n)) : n)).join(c.gray(', '))}`);
-    } else {
+    console.log(banner(version, { agent: this.agentName, mode: this.mode, cwd: tildify(this.cwd), linked }));
+    if (!linked.length) {
       out.warn('no agents found — install Claude Code (https://claude.com/claude-code) or /link one');
     }
-    console.log(`  ${c.gray('/help for commands · /agent <name> to switch · Ctrl+C stops a running agent')}\n`);
+    console.log(`  ${c.gray('/help for commands · /agent <name> to switch · ctrl+c stops a running agent')}\n`);
 
     this.rl = readline.createInterface({
       input: process.stdin,
