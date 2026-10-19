@@ -87,11 +87,26 @@ function renderMarkdown(text) {
     .join('\n');
 }
 
-// The little Claude creature.
-const CREATURE = [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '];
+// The little Claude creature: a body and two leg frames, so it can walk.
+const CREATURE = ['▐▛█▜▌', ' ▘ ▘ ', ' ▝ ▝ '];
+const TRACK = 12; // columns the banner creature wanders across
 
-function banner(version, { agent, mode, cwd, linked }) {
-  const art = CREATURE.map((l) => hex(agentColor(agent))(l));
+// Two rows of creature at column `x` of the track, legs on frame `step`.
+function creatureRows(x, step, color) {
+  const pad = (s) => ' '.repeat(x) + hex(color)(s) + ' '.repeat(TRACK - x - s.length);
+  return [pad(CREATURE[0]), pad(CREATURE[1 + (step % 2)])];
+}
+
+// Wandering back and forth: position and leg frame for a given tick.
+function wander(tick, width = TRACK - CREATURE[0].length) {
+  const span = width * 2;
+  const p = tick % span;
+  return { x: p <= width ? p : span - p, step: tick };
+}
+
+function banner(version, { agent, mode, cwd, linked }, tick = 0) {
+  const { x, step } = wander(tick);
+  const art = [' '.repeat(TRACK), ...creatureRows(x, step, agentColor(agent))];
   const maxInfo = 44;
   const where = cwd.length > maxInfo ? '…' + cwd.slice(-(maxInfo - 1)) : cwd;
   const text = [
@@ -99,16 +114,14 @@ function banner(version, { agent, mode, cwd, linked }) {
     c.italic(c.gray('type what you want — your agents do it')),
     `${hex(agentColor(agent))(agent)}${c.gray(' · ' + mode + ' · ' + where)}`,
   ];
-  const rows = art.map((a, i) => `   ${a}    ${text[i]}`);
+  const rows = art.map((a, i) => `  ${a}  ${text[i]}`);
   const width = Math.max(...rows.map(visibleWidth)) + 3;
   const edge = (s) => hex(PALETTE.gold)(s);
   const line = (s) => edge('│') + padVisible(s, width) + edge('│');
   const out = [
     '',
     edge('╭' + '─'.repeat(width) + '╮'),
-    line(''),
     ...rows.map(line),
-    line(''),
     edge('╰' + '─'.repeat(width) + '╯'),
   ];
   if (linked.length > 1) {
@@ -157,10 +170,10 @@ class Spinner {
     return this.timer !== null;
   }
 
-  start(color = PALETTE.clay) {
+  start(color = PALETTE.clay, started = Date.now()) {
     if (!this.stream.isTTY || this.timer) return;
     this.color = color;
-    this.started = Date.now();
+    this.started = started;
     this.frame = 0;
     this.verb = this._pick();
     this.stream.write('\x1b[?25l');
@@ -178,8 +191,10 @@ class Spinner {
   line() {
     if (this.frame > 0 && this.frame % VERB_FRAMES === 0) this.verb = this._pick();
     const glyph = GLYPHS[Math.floor(this.frame / 2) % GLYPHS.length];
+    const { x } = wander(Math.floor(this.frame / 3), 6);
+    const walker = ' '.repeat(x) + hex(this.color)(CREATURE[0]) + ' '.repeat(6 - x);
     const secs = Math.floor((Date.now() - this.started) / 1000);
-    return ` ${hex(this.color)(glyph)} ${shimmer(this.verb + '…', this.frame, this.color)} ${c.gray(`(${secs}s · ctrl+c to stop)`)}`;
+    return ` ${walker} ${hex(this.color)(glyph)} ${shimmer(this.verb + '…', this.frame, this.color)} ${c.gray(`(${secs}s · ctrl+c to stop)`)}`;
   }
 
   _render() {
@@ -200,4 +215,4 @@ class Spinner {
   }
 }
 
-module.exports = { c, hex, gradient, renderMarkdown, banner, agentColor, Spinner, CREATURE, VERBS, PALETTE, stripAnsi };
+module.exports = { c, hex, gradient, renderMarkdown, banner, agentColor, Spinner, CREATURE, VERBS, PALETTE, stripAnsi, visibleWidth };

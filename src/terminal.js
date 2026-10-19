@@ -62,7 +62,7 @@ function setupWindowsTerminal() {
         startingDirectory: os.homedir(),
         icon: '🎨',
         colorScheme: SCHEME.name,
-        font: { face: font, size: 12, weight: 'normal' },
+        font: { face: font, size: 9, weight: 'normal' }, // 75% of the usual 12pt
         cursorShape: 'bar',
         padding: '14, 12',
         opacity: 96,

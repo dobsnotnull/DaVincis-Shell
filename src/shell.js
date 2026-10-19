@@ -6,18 +6,34 @@ const { spawn } = require('child_process');
 const config = require('./config');
 const { createAgents } = require('./agents');
 const { commands, getCommand } = require('./commands');
-const { c, hex, renderMarkdown, banner, agentColor, Spinner } = require('./ui');
+const { c, hex, renderMarkdown, banner, agentColor, Spinner, visibleWidth } = require('./ui');
 const { IS_WIN, which, desktopDir, tildify, expandTemplate, parseInput } = require('./util');
 const { version } = require('../package.json');
 
 const spinner = new Spinner();
 let speaker = 'claude';
+// Set by the Shell: reads one line from the user while an agent waits on it (null = cancelled).
+let readAnswer = async () => null;
 
 // Anything printed while the spinner runs clears its line first; it redraws on the next tick.
 const say = (fn) => (...args) => {
   spinner.clear();
   fn(...args);
 };
+
+// Pause the spinner, show a question, and wait for the user's reply.
+async function ask(lines) {
+  const started = spinner.started;
+  const wasActive = spinner.active;
+  spinner.stop();
+  process.stdout.write(lines.join('\n') + '\n');
+  const answer = await readAnswer(`  ${hex(agentColor(speaker))('❯')} `);
+  if (wasActive && answer !== null) {
+    console.log();
+    spinner.start(agentColor(speaker), started);
+  }
+  return answer;
+}
 
 // Terminal output for agent runs and commands.
 const out = {
@@ -29,7 +45,40 @@ const out = {
   tool: say((name, detail) =>
     process.stdout.write(`  ${hex(agentColor(speaker))('↳')} ${c.bold(name)} ${c.gray(detail)}\n`)
   ),
+  toolResult: say((msg) => process.stdout.write(c.gray(`    ⎿ ${msg}`) + '\n')),
   toolError: say((msg) => process.stdout.write(c.red(`    ✗ ${msg}`) + '\n')),
+  // A question from the agent with numbered options. Resolves to the chosen label(s) or free text.
+  choose: async (q) => {
+    const color = hex(agentColor(speaker));
+    const opts = q.options || [];
+    const lines = [`${color('?')} ${q.header ? c.bold(q.header) + c.gray(' · ') : ''}${q.question}`];
+    opts.forEach((o, i) =>
+      lines.push(`    ${color(i + 1 + '.')} ${o.label}${o.description ? c.gray(' — ' + o.description) : ''}`)
+    );
+    lines.push(c.gray(`    ${q.multiSelect ? 'numbers separated by commas' : 'a number'}, or type your own answer`));
+    const a = await ask(lines);
+    if (a === null) return null;
+    const picks = a.split(/[\s,]+/).filter(Boolean).map(Number);
+    if (picks.length && picks.every((n) => Number.isInteger(n) && n >= 1 && n <= opts.length)) {
+      return (q.multiSelect ? picks : picks.slice(0, 1)).map((n) => opts[n - 1].label).join(', ');
+    }
+    return a.trim() || (opts[0] ? opts[0].label : '');
+  },
+  // A yes/no from the agent. Resolves to 'yes', 'always', 'no', free text, or null if cancelled.
+  confirm: async (title, detail = '', always = null) => {
+    const color = hex(agentColor(speaker));
+    const keys = [`${color('y')} yes`, always && `${color('a')} always allow ${always}`, `${color('n')} no`];
+    const a = await ask([
+      `${color('?')} ${c.bold(title)} ${c.gray(detail)}`,
+      c.gray(`    ${keys.filter(Boolean).join(c.gray(' · '))} · or say what to do instead`),
+    ]);
+    if (a === null) return null;
+    const t = a.trim().toLowerCase();
+    if (t === '' || t === 'y' || t === 'yes') return 'yes';
+    if (always && (t === 'a' || t === 'always')) return 'always';
+    if (t === 'n' || t === 'no') return 'no';
+    return a.trim();
+  },
   // Raw streams from CLI agents can end mid-line, so the spinner bows out for good.
   raw: (chunk) => {
     spinner.stop();
@@ -59,6 +108,8 @@ class Shell {
     this.busy = false;
     this.running = null;
     this.hasGh = Boolean(which('gh'));
+    this.answering = null;
+    readAnswer = (prompt) => this.question(prompt);
 
     const wanted = agent || this.config.defaultAgent;
     const linked = [...this.agents].find(([, a]) => a.isLinked());
@@ -97,7 +148,9 @@ class Shell {
     this.running = null;
     const bits = [];
     if (result.durationMs) bits.push(`${(result.durationMs / 1000).toFixed(1)}s`);
-    if (result.costUsd) bits.push(`$${result.costUsd.toFixed(4)}`);
+    // With a Claude Pro/Max login the cost Claude Code reports is notional, not billed,
+    // so only show it when an API key (which is billed) is in use.
+    if (result.costUsd && process.env.ANTHROPIC_API_KEY) bits.push(`$${result.costUsd.toFixed(4)}`);
     if (result.ok) console.log(c.gray(`  ${c.green('✓')} ${agent.name}${bits.length ? ' · ' + bits.join(' · ') : ''}`));
     console.log();
     return result;
@@ -163,11 +216,66 @@ class Shell {
     this.rl.resume();
   }
 
+  // Read one line for an agent's question while it waits. Resolves to null on Ctrl+C.
+  question(prompt) {
+    if (!this.rl) {
+      // one-shot mode (`davinci "<request>"`): borrow the terminal just for this answer
+      return new Promise((resolve) => {
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        let answer = null;
+        rl.question(prompt, (a) => {
+          answer = a;
+          rl.close();
+        });
+        rl.on('SIGINT', () => rl.close());
+        rl.on('close', () => resolve(answer));
+      });
+    }
+    return new Promise((resolve) => {
+      this.answering = resolve;
+      this.resumeInput();
+      this.rl.setPrompt(prompt);
+      this.rl.prompt();
+    });
+  }
+
+  answer(value) {
+    const resolve = this.answering;
+    this.answering = null;
+    this.suspendInput();
+    resolve(value);
+  }
+
+  // The banner creature wanders about until the user starts typing.
+  animateBanner(info, linesBelow) {
+    if (!process.stdout.isTTY || !process.stdin.isTTY) return;
+    const first = banner(version, info).split('\n');
+    if ((process.stdout.columns || 0) <= visibleWidth(first[1])) return; // a wrapped box would smear
+    const rows = [3, 4]; // the creature's lines within the banner
+    let tick = 0;
+    const timer = setInterval(() => {
+      const lines = banner(version, info, ++tick).split('\n');
+      let s = '\x1b7\x1b[?25l';
+      for (const i of rows) s += `\x1b8\x1b[${first.length + linesBelow - i}A\r${lines[i]}`;
+      process.stdout.write(s + '\x1b8\x1b[?25h');
+    }, 160);
+    const stop = () => {
+      clearInterval(timer);
+      process.stdin.off('keypress', stop);
+      process.stdout.off('resize', stop);
+    };
+    process.stdin.on('keypress', stop);
+    process.stdout.on('resize', stop);
+  }
+
   start() {
     const linked = [...this.agents].filter(([, a]) => a.isLinked()).map(([n]) => n);
-    console.log(banner(version, { agent: this.agentName, mode: this.mode, cwd: tildify(this.cwd), linked }));
+    const info = { agent: this.agentName, mode: this.mode, cwd: tildify(this.cwd), linked };
+    console.log(banner(version, info));
+    let below = 2;
     if (!linked.length) {
       out.warn('no agents found — install Claude Code (https://claude.com/claude-code) or /link one');
+      below++;
     }
     console.log(`  ${c.gray('/help for commands · /agent <name> to switch · ctrl+c stops a running agent')}\n`);
 
@@ -181,6 +289,10 @@ class Shell {
 
     let lastSigint = 0;
     this.rl.on('SIGINT', () => {
+      if (this.answering) {
+        process.stdout.write('\n');
+        return this.answer(null);
+      }
       if (this.rl.line) {
         this.rl.write(null, { ctrl: true, name: 'u' });
         return;
@@ -218,16 +330,19 @@ class Shell {
       this.rl.prompt();
     };
     this.rl.on('line', (line) => {
+      if (this.answering) return this.answer(line);
       queue.push(line);
       drain();
     });
     this.rl.on('close', () => {
       closed = true;
+      if (this.answering) this.answer(null);
       if (!this.busy) this.exit();
     });
 
     this.rl.setPrompt(this.promptText());
     this.rl.prompt();
+    this.animateBanner(info, below);
   }
 
   exit() {

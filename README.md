@@ -237,7 +237,7 @@ test/                 unit tests (node --test)
 2. **Parse.** `parseInput()` sorts the line into one of four kinds: a `/command`, a `!shell` line, a macro, or a plain request.
 3. **Context.** For agent requests, the shell builds a short **system note**: your OS, home folder, Desktop, current folder, whether `gh` is available, and an instruction to ask before doing anything destructive.
 4. **Dispatch.** The adapter starts the agent as a child process in your current folder. The prompt is always sent on **stdin**, so the shell never interprets the text of a request.
-5. **Stream.** Output appears as it arrives. The Claude adapter reads Claude Code's `stream-json` events and shows each tool call (`↳ PowerShell …`), errors, blocked actions, the reply, and the time and cost.
+5. **Stream.** Output appears as it arrives. The Claude adapter reads Claude Code's `stream-json` events and shows each tool call (`↳ PowerShell …`) with a short result line, errors, the reply, and the time. When Claude needs a permission, a plan approval, or asks you a question, it appears right in the shell for you to answer. Cost is only shown with an API key; on a Claude Pro/Max login usage comes out of your plan.
 6. **Remember.** Claude's session ID is kept, so the next request continues the same session with `--resume`. Generic agents get their last few exchanges passed back to them.
 
 ### Agent adapters

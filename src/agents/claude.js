@@ -48,6 +48,9 @@ function findClaude(configured) {
   return found.length ? found[0].p : null;
 }
 
+// Tools DaVinci shows in its own way (questions, plan approval) rather than as a tool call.
+const QUIET_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
+
 function summarizeInput(input = {}) {
   const v =
     input.command ||
@@ -75,6 +78,8 @@ class ClaudeAgent {
     this.costUsd = 0;
     this.child = null;
     this._command = undefined;
+    this.allowed = new Set(); // tools the user said "always" to this session
+    this.tools = new Map(); // tool_use id -> tool name
   }
 
   get description() {
@@ -92,6 +97,8 @@ class ClaudeAgent {
 
   reset() {
     this.sessionId = null;
+    this.allowed.clear();
+    this.tools.clear();
   }
 
   cancel() {
@@ -99,7 +106,16 @@ class ClaudeAgent {
   }
 
   run(prompt, { cwd, mode, systemPrompt, out }) {
-    const args = ['-p', '--output-format', 'stream-json', '--verbose', ...(MODE_ARGS[mode] || MODE_ARGS.normal)];
+    // stream-json both ways: Claude Code sends permission checks and questions
+    // (AskUserQuestion) back as control requests, so the user answers them here.
+    const args = [
+      '-p',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--permission-prompt-tool', 'stdio',
+      ...(MODE_ARGS[mode] || MODE_ARGS.normal),
+    ];
     args.push('--append-system-prompt', systemPrompt);
     if (this.cfg.model) args.push('--model', this.cfg.model);
     if (this.sessionId) args.push('--resume', this.sessionId);
@@ -115,13 +131,21 @@ class ClaudeAgent {
 
       const child = spawnCommand(this.command(), args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
+      const send = (msg) => {
+        if (child.stdin.writable) child.stdin.write(JSON.stringify(msg) + '\n');
+      };
       let buf = '';
       let stderr = '';
       let result = null;
 
       const handleLine = (line) => {
         const ev = this._parse(line, out);
-        if (ev && ev.type === 'result') result = ev;
+        if (!ev) return;
+        if (ev.type === 'control_request') this._answer(ev, out, send);
+        if (ev.type === 'result') {
+          result = ev;
+          child.stdin.end(); // one turn per run; --resume carries the conversation on
+        }
       };
 
       child.stdout.setEncoding('utf8');
@@ -150,8 +174,54 @@ class ClaudeAgent {
         });
       });
       child.stdin.on('error', () => {}); // child may exit before reading stdin
-      child.stdin.end(prompt);
+      send({ type: 'control_request', request_id: 'init', request: { subtype: 'initialize', hooks: null } });
+      send({ type: 'user', message: { role: 'user', content: prompt }, parent_tool_use_id: null, session_id: '' });
     });
+  }
+
+  // Claude wants something from the user: a permission, a plan approval or an answer.
+  async _answer(ev, out, send) {
+    const req = ev.request || {};
+    let response = {};
+    if (req.subtype === 'can_use_tool') {
+      try {
+        response = await this._decide(req.tool_name, req.input || {}, out);
+      } catch (err) {
+        response = { behavior: 'deny', message: err.message };
+      }
+      if (response === null) return this.cancel(); // Ctrl+C at the question
+    }
+    send({ type: 'control_response', response: { subtype: 'success', request_id: ev.request_id, response } });
+  }
+
+  async _decide(tool, input, out) {
+    const allow = (updatedInput = input) => ({ behavior: 'allow', updatedInput });
+    const deny = (message) => ({ behavior: 'deny', message });
+
+    if (tool === 'AskUserQuestion') {
+      const answers = {};
+      for (const q of input.questions || []) {
+        const a = await out.choose(q);
+        if (a === null) return null;
+        answers[q.question] = a;
+      }
+      return allow({ ...input, answers });
+    }
+
+    if (tool === 'ExitPlanMode') {
+      if (input.plan) out.text(input.plan);
+      const reply = await out.confirm('Go ahead with this plan?');
+      if (reply === null) return null;
+      if (reply === 'yes') return allow();
+      return deny(reply === 'no' ? 'The user wants to keep planning.' : `The user said: ${reply}`);
+    }
+
+    if (this.allowed.has(tool)) return allow();
+    const reply = await out.confirm(`Allow ${tool}?`, summarizeInput(input), tool);
+    if (reply === null) return null;
+    if (reply === 'always') this.allowed.add(tool);
+    if (reply === 'yes' || reply === 'always') return allow();
+    return deny(reply === 'no' ? 'The user declined this.' : `The user declined and said: ${reply}`);
   }
 
   _parse(line, out) {
@@ -170,12 +240,22 @@ class ClaudeAgent {
         if (ev.parent_tool_use_id) break; // subagent chatter
         for (const block of (ev.message && ev.message.content) || []) {
           if (block.type === 'text' && block.text.trim()) out.text(block.text);
-          else if (block.type === 'tool_use') out.tool(block.name, summarizeInput(block.input));
+          else if (block.type === 'tool_use') {
+            this.tools.set(block.id, block.name);
+            if (!QUIET_TOOLS.has(block.name)) out.tool(block.name, summarizeInput(block.input));
+          }
         }
         break;
       case 'user':
+        if (ev.parent_tool_use_id) break;
         for (const block of (ev.message && ev.message.content) || []) {
-          if (block.type === 'tool_result' && block.is_error) out.toolError(firstLine(toolResultText(block.content)));
+          if (block.type !== 'tool_result' || QUIET_TOOLS.has(this.tools.get(block.tool_use_id))) continue;
+          const text = toolResultText(block.content).trim();
+          if (block.is_error) out.toolError(firstLine(text));
+          else if (text) {
+            const more = text.split(/\r?\n/).length - 1;
+            out.toolResult(firstLine(text, 90) + (more > 0 ? ` … +${more} lines` : ''));
+          }
         }
         break;
       case 'result': {
@@ -183,8 +263,9 @@ class ClaudeAgent {
         if (typeof ev.total_cost_usd === 'number') this.costUsd += ev.total_cost_usd;
         if (ev.is_error && ev.result) out.error(ev.result);
         const denials = ev.permission_denials || [];
-        for (const d of denials) out.warn(`blocked: ${d.tool_name} ${summarizeInput(d.tool_input)}`);
-        if (denials.length) out.hint('Some actions were blocked. Use /mode yolo to allow everything, or allow them in your Claude settings.');
+        for (const d of denials) {
+          if (!QUIET_TOOLS.has(d.tool_name)) out.warn(`blocked: ${d.tool_name} ${summarizeInput(d.tool_input)}`);
+        }
         break;
       }
     }

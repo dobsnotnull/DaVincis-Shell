@@ -204,7 +204,7 @@ const commands = {
       console.log(`  mode    ${shell.mode}`);
       console.log(`  folder  ${shell.cwd}`);
       if (a.sessionId) console.log(`  session ${c.gray(a.sessionId)}`);
-      if (a.costUsd) console.log(`  spend   ~$${a.costUsd.toFixed(4)} ${c.gray('(API-equivalent)')}`);
+      if (a.costUsd && process.env.ANTHROPIC_API_KEY) console.log(`  spend   ~$${a.costUsd.toFixed(4)}`);
       console.log();
     },
   },
