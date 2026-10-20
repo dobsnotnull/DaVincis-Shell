@@ -342,6 +342,7 @@ Settings are stored in `~/.davinci/config.json` (`/config` opens it). The file i
 npm test     # unit tests
 npm start    # run from the repo without npm link
 ```
+Built by dobsnotnull
 
 ## License
 
