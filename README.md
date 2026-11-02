@@ -38,7 +38,7 @@ DaVinci runs on **Windows, macOS and Linux**. You need **Node.js 18 or newer**. 
 node --version
 ```
 
-### 2. Install at least one agent
+### 2. Install at least one agent or two if you like
 
 DaVinci's Shell doesn't contain an AI itself. It drives agents that are already installed on your machine. Pick one or more:
 
